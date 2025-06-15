@@ -13,7 +13,7 @@ python3 -m venv env
 source env/bin/activate
 ```
 
-### 1.2 (Optional) Set CUDA path for GPU acceleration
+### 1.2 Set CUDA path for GPU acceleration
 
 ```bash
 export CUDA_HOME=/usr/local/cuda-11.7
