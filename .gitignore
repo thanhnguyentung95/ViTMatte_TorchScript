@@ -142,3 +142,4 @@ dmypy.json
 
 cluster.sh
 pretrained/vitmatte-b.pth
+model.pt
