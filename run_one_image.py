@@ -19,6 +19,7 @@ python run_one_image.py \
 import os
 from PIL import Image
 from os.path import join as opj
+import torch
 from torchvision.transforms import functional as F
 from detectron2.engine import default_argument_parser
 from detectron2.config import LazyConfig, instantiate
@@ -32,7 +33,7 @@ def infer_one_image(model, input, save_dir=None):
         image: the input image
         trimap: the input trimap
     """
-    output = model(input)['phas'].flatten(0, 2)
+    output = model(input).flatten(0, 2)
     output = F.to_pil_image(output)
     output.save(opj(save_dir))
 
@@ -63,6 +64,14 @@ def init_model(model, checkpoint, device):
         model.to('cuda')
         model.eval()
         DetectionCheckpointer(model).load(checkpoint)
+
+    # scripted_model = torch.jit.script(model)
+    # scripted_model.save('model.pt')
+
+    example_input = {"image": torch.randn(1, 3, 1240, 1240), "trimap": torch.randn(1, 1, 1240, 1240)}
+    traced = torch.jit.trace(model, (example_input,), strict=False)
+    traced.save("model.pt")
+    assert False, "This point have been reached"
     return model
 
 def get_data(image_dir, trimap_dir):
@@ -85,8 +94,8 @@ def get_data(image_dir, trimap_dir):
 if __name__ == '__main__':
     #add argument we need:
     parser = default_argument_parser()
-    parser.add_argument('--model', type=str, default='vitmatte-s')
-    parser.add_argument('--checkpoint-dir', type=str, default='path/to/checkpoint')
+    parser.add_argument('--model', type=str, default='vitmatte-b')
+    parser.add_argument('--checkpoint-dir', type=str, default='pretrained/vitmatte-b.pth')
     parser.add_argument('--image-dir', type=str, default='demo/retriever_rgb.png')
     parser.add_argument('--trimap-dir', type=str, default='demo/retriever_trimap.png')
     parser.add_argument('--output-dir', type=str, default='demo/result.png')

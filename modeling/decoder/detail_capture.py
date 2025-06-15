@@ -49,10 +49,12 @@ class ConvStream(nn.Module):
     
     def forward(self, x):
         out_dict = {'D0': x}
-        for i in range(len(self.convs)):
-            x = self.convs[i](x)
-            name_ = 'D'+str(i+1)
-            out_dict[name_] = x
+        x = self.convs[0](x)
+        out_dict['D1'] = x
+        x = self.convs[1](x)
+        out_dict['D2'] = x
+        x = self.convs[2](x)
+        out_dict['D3'] = x
         
         return out_dict
 
@@ -69,7 +71,7 @@ class Fusion_Block(nn.Module):
         self.conv = Basic_Conv3x3(in_chans, out_chans, stride=1, padding=1)
 
     def forward(self, x, D):
-        F_up = F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=False)
+        F_up = F.interpolate(x, scale_factor=2.0, mode='bilinear', align_corners=False)
         out = torch.cat([D, F_up], dim=1)
         out = self.conv(out)
 
@@ -131,10 +133,10 @@ class Detail_Capture(nn.Module):
 
     def forward(self, features, images):
         detail_features = self.convstream(images)
-        for i in range(len(self.fusion_blks)):
+        for i, blk in enumerate(self.fusion_blks):
             d_name_ = 'D'+str(len(self.fusion_blks)-i-1)
-            features = self.fusion_blks[i](features, detail_features[d_name_])
+            features = blk(features, detail_features[d_name_])
         
         phas = torch.sigmoid(self.matting_head(features))
 
-        return {'phas': phas}
+        return phas

@@ -73,7 +73,9 @@ class Attention(nn.Module):
         attn = (q * self.scale) @ k.transpose(-2, -1)
 
         if self.use_rel_pos:
-            attn = add_decomposed_rel_pos(attn, q, self.rel_pos_h, self.rel_pos_w, (H, W), (H, W))
+            q_size = torch.tensor([H, W], dtype=torch.int32)
+            k_size = torch.tensor([H, W], dtype=torch.int32)
+            attn = add_decomposed_rel_pos(attn, q, self.rel_pos_h, self.rel_pos_w, q_size, k_size)
 
         attn = attn.softmax(dim=-1)
         x = (attn @ v).view(B, self.num_heads, H, W, -1).permute(0, 2, 3, 1, 4).reshape(B, H, W, -1)
@@ -227,23 +229,17 @@ class Block(nn.Module):
         self.window_size = window_size
 
         self.use_residual_block = use_residual_block
-        if use_residual_block:
-            # Use a residual block with bottleneck channel as dim // 2
-            self.residual = ResBottleneckBlock(
-                in_channels=dim,
-                out_channels=dim,
-                bottleneck_channels=dim // 2,
-                norm="LN",
-                act_layer=act_layer,
-                conv_kernels=res_conv_kernel_size,
-                conv_paddings=res_conv_padding,
-            )
+        # Use a residual block with bottleneck channel as dim // 2
+        self.residual = ResBottleneckBlock(
+            in_channels=dim,
+            out_channels=dim,
+            bottleneck_channels=dim // 2,
+            norm="LN",
+            act_layer=act_layer,
+            conv_kernels=res_conv_kernel_size,
+            conv_paddings=res_conv_padding,
+        )
         self.use_convnext_block = use_convnext_block
-        if use_convnext_block:
-            self.convnext = ConvNextBlock(dim = dim)
-
-        if use_cc_attn:
-            self.attn = CrissCrossAttention(dim)
 
 
     def forward(self, x):
@@ -253,20 +249,21 @@ class Block(nn.Module):
         if self.window_size > 0:
             H, W = x.shape[1], x.shape[2]
             x, pad_hw = window_partition(x, self.window_size)
+        else:
+            H, W = x.shape[1], x.shape[2]  # unused
+            pad_hw = (0, 0)  # or an appropriate default/fallback value
+
 
         x = self.attn(x)
 
         # Reverse window partition
         if self.window_size > 0:
-            x = window_unpartition(x, self.window_size, pad_hw, (H, W))
+            x = window_unpartition(x, (self.window_size, self.window_size), pad_hw, (H, W))
 
         x = shortcut + self.drop_path(x)
         x = x + self.drop_path(self.mlp(self.norm2(x)))
 
-        if self.use_residual_block:
-            x = self.residual(x.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
-        if self.use_convnext_block:
-            x = self.convnext(x.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+        x = self.residual(x.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
 
         return x
 
@@ -393,7 +390,9 @@ class ViT(Backbone):
         x = self.patch_embed(x)
         if self.pos_embed is not None:
             x = x + get_abs_pos(
-                self.pos_embed, self.pretrain_use_cls_token, (x.shape[1], x.shape[2])
+                self.pos_embed,
+                torch.tensor(self.pretrain_use_cls_token, device=x.device),
+                torch.tensor([x.shape[1], x.shape[2]], device=x.device)  # <-- Convert tuple to Tensor
             )
 
         for blk in self.blocks:

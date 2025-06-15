@@ -1,3 +1,4 @@
+from typing import Dict
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -35,52 +36,37 @@ class ViTMatte(nn.Module):
     def device(self):
         return self.pixel_mean.device
 
-    def forward(self, batched_inputs):
+    def forward(self, batched_inputs: Dict[str, torch.Tensor]):
         images, targets, H, W = self.preprocess_inputs(batched_inputs)
 
         features = self.backbone(images)
         outputs = self.decoder(features, images)  
 
-        if self.training:
-            assert targets is not None
-            trimap = images[:, 3:4]
-            sample_map = torch.zeros_like(trimap)
-            sample_map[trimap==0.5] = 1
-            losses = self.criterion(sample_map ,outputs, targets)               
-            return losses
-        else:
-            outputs['phas'] = outputs['phas'][:,:,:H,:W]
-            return outputs
+        outputs = outputs[:,:,:H,:W]
+        return outputs
 
 
 
-    def preprocess_inputs(self, batched_inputs):
+    def preprocess_inputs(self, batched_inputs: Dict[str, torch.Tensor]):
         """
         Normalize, pad and batch the input images.
         """
-        images = batched_inputs["image"].to(self.device)
+        images = batched_inputs['image'].to(self.device)
         trimap = batched_inputs['trimap'].to(self.device)
         images = (images - self.pixel_mean) / self.pixel_std
-
-        if 'fg' in batched_inputs.keys():
-            trimap[trimap < 85] = 0
-            trimap[trimap >= 170] = 1
-            trimap[trimap >= 85] = 0.5
 
         images = torch.cat((images, trimap), dim=1)
         
         B, C, H, W = images.shape
-        if images.shape[-1]%32!=0 or images.shape[-2]%32!=0:
-            new_H = (32-images.shape[-2]%32) + H
-            new_W = (32-images.shape[-1]%32) + W
-            new_images = torch.zeros((images.shape[0], images.shape[1], new_H, new_W)).to(self.device)
-            new_images[:,:,:H,:W] = images[:,:,:,:]
-            del images
+        if H % 32 != 0 or W % 32 != 0:
+            new_H = (32 - H % 32) + H
+            new_W = (32 - W % 32) + W
+            new_images = torch.zeros((B, C, new_H, new_W), device=self.device)
+            new_images[:, :, :H, :W] = images
             images = new_images
+        # No need for `else`, images is valid in both cases now
 
-        if "alpha" in batched_inputs:
-            phas = batched_inputs["alpha"].to(self.device)
-        else:
-            phas = None
+
+        phas = None
 
         return images, dict(phas=phas), H, W

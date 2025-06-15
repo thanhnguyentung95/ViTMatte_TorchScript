@@ -1,3 +1,5 @@
+from typing import List, Union
+from detectron2.config.lazy import ListConfig
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -5,10 +7,11 @@ import torch.nn.functional as F
 class MattingCriterion(nn.Module):
     def __init__(self,
                  *,
-                 losses,
+                 losses: Union[List[str], ListConfig],
                  ):
         super(MattingCriterion, self).__init__()
-        self.losses = losses
+        # Convert ListConfig to standard list for TorchScript compatibility
+        self.losses = list(losses) if isinstance(losses, ListConfig) else losses
 
     def loss_gradient_penalty(self, sample_map ,preds, targets):
         preds = preds['phas']
@@ -65,11 +68,11 @@ class MattingCriterion(nn.Module):
 
     def forward(self, sample_map, preds, targets):
         losses = dict()
-        for k in self.losses:
-            if k=='unknown_l1_loss' or k=='known_l1_loss' or k=='loss_gradient_penalty':
-                losses.update(getattr(self, k)(sample_map, preds, targets))
-            else:
-                losses.update(getattr(self, k)(preds, targets))
+        # for k in self.losses:
+        #     if k=='unknown_l1_loss' or k=='known_l1_loss' or k=='loss_gradient_penalty':
+        #         losses.update(getattr(self, k)(sample_map, preds, targets))
+        #     else:
+        #         losses.update(getattr(self, k)(preds, targets))
         return losses
 
 

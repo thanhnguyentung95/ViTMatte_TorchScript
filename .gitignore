@@ -141,3 +141,4 @@ dmypy.json
 .pyre/
 
 cluster.sh
+pretrained/vitmatte-b.pth
